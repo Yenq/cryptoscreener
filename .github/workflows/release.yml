@@ -1,0 +1,77 @@
+name: Windows build
+
+on:
+  push:
+    tags: ["v*"]   # git tag v1.1.0 && git push --tags  -> новый релиз
+  workflow_dispatch: # ручной запуск: соберёт exe и положит в Artifacts, без релиза
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+
+      - run: pip install -r requirements-build.txt
+
+      - name: Версия из тега
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: python
+        run: |
+          import os, re
+          ver = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          s = open("app/version.py", encoding="utf-8").read()
+          s = re.sub(r'__version__ = ".*"', f'__version__ = "{ver}"', s)
+          s = s.replace('GITHUB_REPO = ""', 'GITHUB_REPO = "' + os.environ["GITHUB_REPOSITORY"] + '"')
+          open("app/version.py", "w", encoding="utf-8").write(s)
+
+      - run: pyinstaller --noconfirm vibescreener.spec
+
+      - name: Проверка, что exe стартует и отдаёт страницу
+        shell: pwsh
+        env:
+          NO_BROWSER: "1"
+          SCREENER_DATA_DIR: ${{ runner.temp }}\smoke-data
+        run: |
+          $p = Start-Process -FilePath dist\Vibescreener\Vibescreener.exe -PassThru -RedirectStandardOutput smoke.log -RedirectStandardError smoke-err.log
+          $ok = $false
+          foreach ($i in 1..40) {
+            Start-Sleep -Seconds 1
+            try {
+              $r = Invoke-WebRequest -Uri http://127.0.0.1:8000/api/version -UseBasicParsing
+              $i2 = Invoke-WebRequest -Uri http://127.0.0.1:8000/ -UseBasicParsing
+              if ($r.StatusCode -eq 200 -and $i2.Content -match "Vibescreener") { $ok = $true; break }
+            } catch {}
+          }
+          Stop-Process -Id $p.Id -Force
+          Get-Content smoke.log, smoke-err.log -ErrorAction SilentlyContinue | Select-Object -Last 30
+          if (-not $ok) { throw "exe не запустился" }
+
+      - name: Архив
+        shell: pwsh
+        run: |
+          Copy-Item packaging/README-windows.txt dist\Vibescreener\README.txt
+          $name = "Vibescreener-win64-${{ github.ref_name }}.zip"
+          if (-not "${{ github.ref_name }}".StartsWith("v")) { $name = "Vibescreener-win64-dev.zip" }
+          Compress-Archive -Path dist\Vibescreener -DestinationPath $name
+          "ASSET=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
+
+      - name: Релиз
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
+          generate_release_notes: true
