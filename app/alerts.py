@@ -151,29 +151,38 @@ class AlertEngine:
         self._state: dict[tuple[str, str], bool] = {}  # (alert_id, ticker_key) -> условие выполнялось
         self._last_fire: dict[tuple[str, str], float] = {}
         self._subs: set[asyncio.Queue] = set()
+        self._unparsed: list[dict] = []  # алерты, которые эта версия не поняла: храним как есть, чтобы не потерять
         self._load()
 
     # --- хранение ---------------------------------------------------------
     def _load(self):
+        path = DATA_DIR / "alerts.json"
         try:
-            data = json.loads((DATA_DIR / "alerts.json").read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return
         except Exception:
-            log.exception("не удалось прочитать alerts.json")
+            # файл повреждён: откладываем копию, чтобы следующее сохранение его не затёрло
+            backup = path.with_name(f"alerts.json.bad-{int(time.time())}")
+            try:
+                path.replace(backup)
+                log.error("alerts.json не читается, сохранён как %s", backup.name)
+            except OSError:
+                log.exception("не удалось прочитать alerts.json")
             return
         for a in data.get("alerts", []):
             try:
                 self.alerts[a["id"]] = Alert(**a)
             except Exception:
-                log.warning("пропускаю алерт старого/битого формата: %s", a.get("id"))
+                self._unparsed.append(a)
+                log.warning("алерт %s непонятен этой версии — оставляю в файле нетронутым", a.get("id"))
         self.history = data.get("history", [])
 
     def _save(self):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        payload = {"alerts": [a.model_dump() for a in self.alerts.values()], "history": self.history}
+        payload = {"alerts": [a.model_dump() for a in self.alerts.values()] + self._unparsed, "history": self.history}
         tmp = DATA_DIR / "alerts.json.tmp"
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1))
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(DATA_DIR / "alerts.json")
 
     # --- CRUD -------------------------------------------------------------

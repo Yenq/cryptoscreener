@@ -33,7 +33,7 @@ class Telegram:
     # --- настройки --------------------------------------------------------
     def _load(self):
         try:
-            tg = json.loads(self._path.read_text()).get("telegram", {})
+            tg = json.loads(self._path.read_text(encoding="utf-8")).get("telegram", {})
             self.token = tg.get("token") or self.token
             self.chat_id = tg.get("chat_id") or self.chat_id
             self.bot = tg.get("bot")
@@ -46,7 +46,7 @@ class Telegram:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         data = {"telegram": {"token": self.token, "chat_id": self.chat_id, "bot": self.bot}}
         tmp = self._path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data))
+        tmp.write_text(json.dumps(data), encoding="utf-8")
         os.chmod(tmp, 0o600)  # в файле секрет
         tmp.replace(self._path)
 
