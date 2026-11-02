@@ -13,8 +13,10 @@ const COLUMNS = [
   { key: 'ch1h', label: '1ч', x: true },
   { key: 'ch4h', label: '4ч', x: true },
   { key: 'oi_usd', label: 'ОИ $', x: true, fut: true },
-  { key: 'oi1h', label: 'ОИ 1ч', x: true, fut: true },
-  { key: 'oi24h', label: 'ОИ 24ч', x: true, fut: true },
+  { key: 'oiu1h', label: 'ОИ $ 1ч', x: true, fut: true },
+  { key: 'oiu24h', label: 'ОИ $ 24ч', x: true, fut: true },
+  { key: 'oi1h', label: 'ОИ мон. 1ч', x: true, fut: true },
+  { key: 'oi24h', label: 'ОИ мон. 24ч', x: true, fut: true },
 ];
 const MIN_VOLS = [[0, 'Любой'], [1e5, '≥ 100K'], [1e6, '≥ 1M'], [1e7, '≥ 10M'], [1e8, '≥ 100M']];
 const PAGE = 150;

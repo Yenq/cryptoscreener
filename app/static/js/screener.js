@@ -6,7 +6,8 @@ const WINDOWS = [
   ['5m', 'За 5м'], ['15m', 'За 15м'], ['1h', 'За 1ч'], ['4h', 'За 4ч'], ['24h', 'За 24ч'],
 ];
 const FIELD = { '5m': 'ch5m', '15m': 'ch15m', '1h': 'ch1h', '4h': 'ch4h', '24h': 'ch24h' };
-const OI_FIELD = { '5m': 'oi5m', '15m': 'oi15m', '1h': 'oi1h', '4h': 'oi4h', '24h': 'oi24h' };
+const OI_FIELD = { '5m': 'oi5m', '15m': 'oi15m', '1h': 'oi1h', '4h': 'oi4h', '24h': 'oi24h' }; // ОИ в монетах
+const OIU_FIELD = { '5m': 'oiu5m', '15m': 'oiu15m', '1h': 'oiu1h', '4h': 'oiu4h', '24h': 'oiu24h' }; // ОИ в долларах
 const DIRS = [['up', 'Рост ▲'], ['down', 'Падение ▼'], ['abs', 'Движение ±']];
 const TFS = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const GRIDS = [['2x2', '4 (2×2)'], ['3x2', '6 (3×2)'], ['3x3', '9 (3×3)'], ['4x3', '12 (4×3)'], ['4x4', '16 (4×4)']];
@@ -26,7 +27,7 @@ export function mount(root, ctx) {
       </div>
       <span class="sep"></span>
       <select data-f="by" title="Что сортировать: изменение цены или изменение открытого интереса (только фьючерсы)">
-        <option value="price">Цена</option><option value="oi">Открытый интерес</option>
+        <option value="price">Цена</option><option value="oiu">ОИ — доллары</option><option value="oi">ОИ — монеты</option>
       </select>
       <select data-f="window" title="За какой период считать изменение">${WINDOWS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
       <select data-f="dir">${DIRS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
@@ -47,8 +48,8 @@ export function mount(root, ctx) {
     $('tf').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === p.sTf));
     $('exchanges').querySelectorAll('.chip').forEach(b => b.classList.toggle('on', p.sExchanges.includes(b.dataset.ex)));
     $('dedupe').classList.toggle('on', p.sDedupe);
-    if (p.sMarket === 'spot' && p.sBy === 'oi') p.sBy = 'price'; // ОИ есть только у фьючерсов
-    $('by').querySelector('[value=oi]').disabled = p.sMarket === 'spot';
+    if (p.sMarket === 'spot' && p.sBy !== 'price') p.sBy = 'price'; // ОИ есть только у фьючерсов
+    $('by').querySelectorAll('[value=oi],[value=oiu]').forEach(o => { o.disabled = p.sMarket === 'spot'; });
     $('by').value = p.sBy;
     $('window').value = p.sWindow;
     $('dir').value = p.sDir;
@@ -123,10 +124,12 @@ export function mount(root, ctx) {
     tile.row = row;
     const f = FIELD[p.sWindow];
     const pricePill = `<span class="pill ${sign(row[f])}">${fmtPct(row[f])}</span>`;
+    const usd = p.sBy !== 'oi'; // показываем ОИ в тех единицах, по которым идёт сортировка (по цене — в долларах)
+    const ov = row[(usd ? OIU_FIELD : OI_FIELD)[p.sWindow]];
     const oiPill = row.market === 'futures'
-      ? `<span class="pill ${sign(row[OI_FIELD[p.sWindow]])}" title="Изменение открытого интереса за период">ОИ ${fmtPct(row[OI_FIELD[p.sWindow]])}</span>` : '';
+      ? `<span class="pill ${sign(ov)}" title="Изменение открытого интереса за период, ${usd ? 'в долларах' : 'в монетах'}">ОИ ${usd ? '$' : 'мон.'} ${fmtPct(ov)}</span>` : '';
     tile.el.querySelector('.tile-badges').innerHTML =
-      (p.sBy === 'oi' ? oiPill + pricePill : pricePill + oiPill) +
+      (p.sBy === 'price' ? pricePill + oiPill : oiPill + pricePill) +
       (p.sWindow !== '24h' ? `<span class="pill ${sign(row.ch24h)}" title="За 24ч">24ч ${fmtPct(row.ch24h)}</span>` : '') +
       `<span class="pill natr" title="NATR 5/14">${row.natr === null ? '—' : row.natr.toFixed(2)}</span>` +
       `<span class="pill vol" title="Оборот за 24ч">${fmtVol(row.volume)}</span>` +

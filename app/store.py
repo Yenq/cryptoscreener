@@ -113,16 +113,28 @@ class Store:
             r[k] = round((t.price / ref - 1) * 100, 2) if ref else None
         if s and s.natr is not None:
             r["natr"] = round(s.natr, 2)
-        r["oi"] = r["oi_usd"] = None
+        # ОИ: oi* — изменение в монетах, oiu* — изменение в долларах (монеты × цена)
+        r["oi"] = r["oi_coins"] = r["oi_usd"] = None
         for k in oimod.WINDOWS:
-            r[k] = None
+            r[k] = r["oiu" + k[2:]] = None
         o = self.oi.get(t.key) if t.market == "futures" else None
         if o and o.v:
-            r["oi"] = o.latest()
+            r["oi"] = r["oi_coins"] = o.latest()
             r["oi_usd"] = r["oi"] * t.price
             for k, minutes in oimod.WINDOWS.items():
-                ch = o.change(minutes, now_ms)
-                r[k] = round(ch, 2) if ch is not None else None
+                base = o.ref_value(minutes, now_ms)
+                if not base:
+                    continue
+                r[k] = round((r["oi"] / base - 1) * 100, 2)
+                # цена на начало окна: до 4ч — из минутных свечей, для 24ч — из 24-часового изменения цены
+                if minutes <= 240:
+                    ref = s.price_at(now_ms - minutes * 60_000) if s and s.ts else None
+                elif t.change24h > -99:
+                    ref = t.price / (1 + t.change24h / 100)
+                else:
+                    ref = None
+                if ref:
+                    r["oiu" + k[2:]] = round((r["oi_usd"] / (base * ref) - 1) * 100, 2)
         return r
 
     def rows(self, exchanges=None, market: str | None = None) -> list[dict]:

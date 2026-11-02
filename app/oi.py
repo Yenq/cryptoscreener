@@ -44,8 +44,8 @@ class OiSeries:
     def latest(self) -> float | None:
         return self.v[-1] if self.v else None
 
-    def change(self, minutes: int, now_ms: int) -> float | None:
-        """Изменение ОИ в монетах за окно, %. None — если данных не хватает."""
+    def ref_value(self, minutes: int, now_ms: int) -> float | None:
+        """ОИ (в монетах) на начало окна. None — если данных не хватает."""
         if not self.ts:
             return None
         window = minutes * 60_000
@@ -58,8 +58,12 @@ class OiSeries:
         # точка до начала окна не должна быть слишком старой (дыра в данных / крупный шаг истории)
         if ref - self.ts[i] > max(330_000, window // 2):
             return None
-        base = self.v[i]
-        return (self.v[-1] / base - 1) * 100 if base > 0 else None
+        return self.v[i] if self.v[i] > 0 else None
+
+    def change(self, minutes: int, now_ms: int) -> float | None:
+        """Изменение ОИ в монетах за окно, %."""
+        base = self.ref_value(minutes, now_ms)
+        return (self.v[-1] / base - 1) * 100 if base else None
 
 
 class _SafeUnpickler(pickle.Unpickler):

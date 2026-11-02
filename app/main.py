@@ -24,7 +24,8 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 STATIC = Path(__file__).parent / "static"
 SORT_FIELD = {"5m": "ch5m", "15m": "ch15m", "1h": "ch1h", "4h": "ch4h", "24h": "ch24h"}
-OI_FIELD = {"5m": "oi5m", "15m": "oi15m", "1h": "oi1h", "4h": "oi4h", "24h": "oi24h"}
+OI_FIELD = {"5m": "oi5m", "15m": "oi15m", "1h": "oi1h", "4h": "oi4h", "24h": "oi24h"}  # изменение ОИ в монетах
+OIU_FIELD = {w: "oiu" + f[2:] for w, f in OI_FIELD.items()}  # изменение ОИ в долларах
 
 
 @asynccontextmanager
@@ -87,9 +88,9 @@ async def screener(
     min_volume: float = Query(0, ge=0),
     q: str = "",
     dedupe: bool = True,
-    by: Literal["price", "oi"] = "price",
+    by: Literal["price", "oi", "oiu"] = "price",
 ):
-    field = (OI_FIELD if by == "oi" else SORT_FIELD)[window]
+    field = {"price": SORT_FIELD, "oi": OI_FIELD, "oiu": OIU_FIELD}[by][window]
     names = _exchanges(request, exchanges)
     q = q.strip().upper()
     rows = [r for r in request.app.state.store.rows(names, market)

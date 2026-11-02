@@ -3,18 +3,29 @@ import { api, esc, EXCHANGES, exLabel, fmtPrice, fmtTime, MARKETS } from './util
 const METRICS = {
   ch5m: 'Изменение за 5м, %', ch15m: 'Изменение за 15м, %', ch1h: 'Изменение за 1ч, %', ch4h: 'Изменение за 4ч, %',
   ch24h: 'Изменение за 24ч, %', natr: 'NATR 5/14, %', price: 'Цена', volume: 'Объём 24ч, млн $',
-  oi5m: 'ОИ: изменение за 5м, %', oi15m: 'ОИ: изменение за 15м, %', oi1h: 'ОИ: изменение за 1ч, %',
-  oi4h: 'ОИ: изменение за 4ч, %', oi24h: 'ОИ: изменение за 24ч, %', oi_usd: 'ОИ, млн $ (фьючерсы)',
+  oi5m: 'Изменение за 5м, %', oi15m: 'Изменение за 15м, %', oi1h: 'Изменение за 1ч, %', oi4h: 'Изменение за 4ч, %', oi24h: 'Изменение за 24ч, %',
+  oi_coins: 'Размер ОИ, монет',
+  oiu5m: 'Изменение за 5м, %', oiu15m: 'Изменение за 15м, %', oiu1h: 'Изменение за 1ч, %', oiu4h: 'Изменение за 4ч, %', oiu24h: 'Изменение за 24ч, %',
+  oi_usd: 'Размер ОИ, млн $',
 };
+// группы в выпадающем списке метрик
+const METRIC_GROUPS = [
+  ['Цена и рынок', ['ch5m', 'ch15m', 'ch1h', 'ch4h', 'ch24h', 'natr', 'price', 'volume']],
+  ['Открытый интерес — в монетах (фьючерсы)', ['oi5m', 'oi15m', 'oi1h', 'oi4h', 'oi24h', 'oi_coins']],
+  ['Открытый интерес — в долларах (фьючерсы)', ['oiu5m', 'oiu15m', 'oiu1h', 'oiu4h', 'oiu24h', 'oi_usd']],
+];
+const metricOptions = () => METRIC_GROUPS.map(([g, keys]) =>
+  `<optgroup label="${g}">${keys.map(k => `<option value="${k}">${METRICS[k]}</option>`).join('')}</optgroup>`).join('');
 const METRIC_SHORT = {
   ch5m: '5м', ch15m: '15м', ch1h: '1ч', ch4h: '4ч', ch24h: '24ч', natr: 'NATR', price: 'цена', volume: 'объём',
-  oi5m: 'ОИ 5м', oi15m: 'ОИ 15м', oi1h: 'ОИ 1ч', oi4h: 'ОИ 4ч', oi24h: 'ОИ 24ч', oi_usd: 'ОИ $',
+  oi5m: 'ОИ мон. 5м', oi15m: 'ОИ мон. 15м', oi1h: 'ОИ мон. 1ч', oi4h: 'ОИ мон. 4ч', oi24h: 'ОИ мон. 24ч', oi_coins: 'ОИ, монет',
+  oiu5m: 'ОИ $ 5м', oiu15m: 'ОИ $ 15м', oiu1h: 'ОИ $ 1ч', oiu4h: 'ОИ $ 4ч', oiu24h: 'ОИ $ 24ч', oi_usd: 'ОИ, $',
 };
 const MILLIONS = new Set(['volume', 'oi_usd']); // вводятся в млн $
 const OPS = { gte: '≥ (выросло)', lte: '≤ (упало)', abs_gte: 'по модулю ≥' };
 const OP_SIGN = { gte: '≥', lte: '≤', abs_gte: '|x| ≥' };
 
-const unit = m => (m === 'price' ? '' : MILLIONS.has(m) ? 'M$' : '%');
+const unit = m => (m === 'price' ? '' : m === 'oi_coins' ? ' мон.' : MILLIONS.has(m) ? 'M$' : '%');
 const shown = c => (MILLIONS.has(c.metric) ? c.value / 1e6 : c.value);
 const condText = c => `${METRIC_SHORT[c.metric]} ${OP_SIGN[c.op]} ${shown(c)}${unit(c.metric)}`;
 
@@ -140,7 +151,7 @@ export function mount(root, ctx) {
     const row = document.createElement('div');
     row.className = 'cond';
     row.innerHTML = `
-      <select data-c="metric">${Object.entries(METRICS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
+      <select data-c="metric">${metricOptions()}</select>
       <select data-c="op">${Object.entries(OPS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>
       <input type="number" data-c="value" step="any" required placeholder="значение">
       <button type="button" class="x-btn" data-rm title="Убрать условие">✕</button>`;
@@ -175,7 +186,8 @@ export function mount(root, ctx) {
     ['Памп: любая монета +5% за 5м', { symbols: '*', min_volume: 1, cooldown_min: 15, conds: [{ metric: 'ch5m', op: 'gte', value: 5 }] }],
     ['Дамп: любая монета −5% за 5м', { symbols: '*', min_volume: 1, cooldown_min: 15, conds: [{ metric: 'ch5m', op: 'lte', value: -5 }] }],
     ['Памп на высокой волатильности: 5м ≥ +3% и NATR ≥ 1', { symbols: '*', min_volume: 1, cooldown_min: 30, conds: [{ metric: 'ch5m', op: 'gte', value: 3 }, { metric: 'natr', op: 'gte', value: 1 }] }],
-    ['ОИ растёт вместе с ценой: ОИ 15м ≥ +3% и цена 15м ≥ +1%', { symbols: '*', min_volume: 5, cooldown_min: 30, conds: [{ metric: 'oi15m', op: 'gte', value: 3 }, { metric: 'ch15m', op: 'gte', value: 1 }] }],
+    ['ОИ ($) растёт вместе с ценой: ОИ $ 15м ≥ +3% и цена 15м ≥ +1%', { symbols: '*', min_volume: 5, cooldown_min: 30, conds: [{ metric: 'oiu15m', op: 'gte', value: 3 }, { metric: 'ch15m', op: 'gte', value: 1 }] }],
+    ['ОИ в монетах растёт, цена стоит: ОИ мон. 15м ≥ +3% и |цена 15м| ≤ 0.5%', { symbols: '*', min_volume: 5, cooldown_min: 30, conds: [{ metric: 'oi15m', op: 'gte', value: 3 }, { metric: 'ch15m', op: 'lte', value: 0.5 }] }],
     ['Движение ±10% за 1ч', { symbols: '*', min_volume: 5, cooldown_min: 60, conds: [{ metric: 'ch1h', op: 'abs_gte', value: 10 }] }],
   ];
   $('examples').innerHTML = TEMPLATES.map(([t], i) =>

@@ -24,6 +24,7 @@ export class OiPane {
       this.mode = b.dataset.oi;
       this.el.querySelectorAll('[data-oi]').forEach(x => x.classList.toggle('on', x === b));
       this.render();
+      if (this.row) this.setNow(this.row);
     });
     this.chart = LightweightCharts.createChart(this.el.querySelector('.oi-chart'), {
       autoSize: true,
@@ -46,12 +47,14 @@ export class OiPane {
     main.chart.timeScale().subscribeVisibleTimeRangeChange(this._sync);
   }
 
-  /** Текущий ОИ и его изменение за окна — из строки тикера. */
+  /** Текущий ОИ и его изменение за окна — из строки тикера; в монетах или в долларах — как выбрано переключателем. */
   setNow(r) {
-    const ch = (k, l) => `<span class="${sign(r[k])}">${l} ${fmtPct(r[k])}</span>`;
+    this.row = r;
+    const pre = this.mode === 'usd' ? 'oiu' : 'oi';
+    const ch = (w, l) => `<span class="${sign(r[pre + w])}">${l} ${fmtPct(r[pre + w])}</span>`;
     this.el.querySelector('.oi-now').innerHTML = r.oi === null || r.oi === undefined ? '<span class="muted">данных пока нет</span>'
       : `<b>${fmtVol(r.oi)} ${esc(r.base)}</b> · <b>$${fmtVol(r.oi_usd)}</b> ` +
-        [ch('oi5m', '5м'), ch('oi15m', '15м'), ch('oi1h', '1ч'), ch('oi4h', '4ч'), ch('oi24h', '24ч')].join(' ');
+        [ch('5m', '5м'), ch('15m', '15м'), ch('1h', '1ч'), ch('4h', '4ч'), ch('24h', '24ч')].join(' ');
   }
 
   async refresh(row) {

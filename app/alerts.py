@@ -14,13 +14,17 @@ log = logging.getLogger("alerts")
 HISTORY_LIMIT = 200
 
 Metric = Literal["price", "ch5m", "ch15m", "ch1h", "ch4h", "ch24h", "natr", "volume",
-                 "oi5m", "oi15m", "oi1h", "oi4h", "oi24h", "oi_usd"]
+                 "oi5m", "oi15m", "oi1h", "oi4h", "oi24h",  # изменение ОИ в монетах, %
+                 "oiu5m", "oiu15m", "oiu1h", "oiu4h", "oiu24h",  # изменение ОИ в долларах, %
+                 "oi_coins", "oi_usd"]  # абсолютный ОИ: в монетах и в $
 Op = Literal["gte", "lte", "abs_gte"]
 
 METRIC_SHORT = {
     "price": "цена", "ch5m": "5м", "ch15m": "15м", "ch1h": "1ч", "ch4h": "4ч", "ch24h": "24ч",
     "natr": "NATR", "volume": "объём",
-    "oi5m": "ОИ 5м", "oi15m": "ОИ 15м", "oi1h": "ОИ 1ч", "oi4h": "ОИ 4ч", "oi24h": "ОИ 24ч", "oi_usd": "ОИ $",
+    "oi5m": "ОИ мон. 5м", "oi15m": "ОИ мон. 15м", "oi1h": "ОИ мон. 1ч", "oi4h": "ОИ мон. 4ч", "oi24h": "ОИ мон. 24ч",
+    "oiu5m": "ОИ $ 5м", "oiu15m": "ОИ $ 15м", "oiu1h": "ОИ $ 1ч", "oiu4h": "ОИ $ 4ч", "oiu24h": "ОИ $ 24ч",
+    "oi_coins": "ОИ, монет", "oi_usd": "ОИ, $",
 }
 OP_LABEL = {"gte": "≥", "lte": "≤", "abs_gte": "|x| ≥"}
 EX_LABEL = {"binance": "Binance", "bybit": "Bybit", "okx": "OKX", "bitget": "Bitget", "hyperliquid": "Hyperliquid"}
@@ -132,6 +136,8 @@ def _fmt_value(metric: str, x: float, signed: bool = True) -> str:
         return _fmt_price(x)
     if metric in ("volume", "oi_usd"):
         return f"${x / 1e6:,.1f}M"
+    if metric == "oi_coins":
+        return f"{x:,.0f}".replace(",", " ")
     sign = "+" if signed and x > 0 and metric != "natr" else ""
     return f"{sign}{x:.2f}%"
 
