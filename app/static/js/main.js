@@ -184,16 +184,23 @@ async function showVersion() {
     const v = await api('/version');
     const el = document.getElementById('version');
     el.hidden = false;
-    el.textContent = v.update_available ? `⬆ Доступна v${v.latest} — скачать` : `v${v.current}`;
     el.classList.toggle('new', v.update_available);
-    if (v.update_available) { el.href = v.url; el.title = `Установлена v${v.current}. Распакуй новую версию поверх старой — алерты и настройки (папка data) сохранятся.`; }
+    if (v.update_available) {
+      el.textContent = `⬆ Доступна v${v.latest} — скачать`;
+      el.href = v.url;
+      el.title = `Установлена v${v.current}. Распакуй новую версию поверх старой — алерты и настройки (папка data) сохранятся.`;
+    } else {
+      el.textContent = `v${v.current}`;
+      el.removeAttribute('href');
+      el.title = v.error ? `Проверка обновлений не удалась: ${v.error}` : v.latest ? 'Установлена последняя версия' : 'Проверка обновлений отключена';
+    }
   } catch { /* не критично */ }
 }
 
 updateStatus();
 setInterval(updateStatus, 10000);
 showVersion();
-setInterval(showVersion, 3600_000);
+setInterval(showVersion, 300_000);
 refreshAlerts();
 setInterval(refreshAlerts, 15000);
 route();
