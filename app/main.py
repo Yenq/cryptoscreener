@@ -238,13 +238,9 @@ async def alert_stream(request: Request):
 
 
 # --- Telegram ---------------------------------------------------------------
-class TelegramIn(BaseModel):
-    token: str | None = None
-    chat_id: str | None = None
-
-
-def _tg_error(e: TelegramError):
-    return HTTPException(400, str(e))
+class BotIn(BaseModel):
+    token: str
+    chat_id: str = ""  # пусто — найдём личный чат (бот должен получить Start)
 
 
 @app.get("/api/telegram")
@@ -252,42 +248,61 @@ async def telegram_status(request: Request):
     return request.app.state.telegram.status()
 
 
-@app.put("/api/telegram")
-async def telegram_save(request: Request, data: TelegramIn):
+@app.post("/api/telegram/bots")
+async def telegram_add_bot(request: Request, data: BotIn):
     tg: Telegram = request.app.state.telegram
     try:
-        if data.token and data.token.strip():
-            await tg.set_token(data.token)
-        if data.chat_id is not None and data.chat_id.strip():
-            tg.set_chat(data.chat_id)
+        await tg.add(data.token, data.chat_id)
     except TelegramError as e:
-        raise _tg_error(e)
+        raise HTTPException(400, str(e))
     return tg.status()
 
 
-@app.post("/api/telegram/detect")
-async def telegram_detect(request: Request):
+@app.patch("/api/telegram/bots/{bot_id}")
+async def telegram_toggle_bot(request: Request, bot_id: str, enabled: bool):
     tg: Telegram = request.app.state.telegram
     try:
-        await tg.detect_chat()
+        tg.set_enabled(bot_id, enabled)
     except TelegramError as e:
-        raise _tg_error(e)
+        raise HTTPException(400, str(e))
     return tg.status()
 
 
-@app.post("/api/telegram/test")
-async def telegram_test(request: Request):
+@app.post("/api/telegram/bots/{bot_id}/detect")
+async def telegram_detect_chat(request: Request, bot_id: str):
+    tg: Telegram = request.app.state.telegram
     try:
-        await request.app.state.telegram.send_now("✅ Vibescreener: уведомления в Telegram работают")
+        await tg.detect(bot_id)
     except TelegramError as e:
-        raise _tg_error(e)
+        raise HTTPException(400, str(e))
+    return tg.status()
+
+
+@app.post("/api/telegram/bots/{bot_id}/test")
+async def telegram_test_bot(request: Request, bot_id: str):
+    try:
+        await request.app.state.telegram.test(bot_id)
+    except TelegramError as e:
+        raise HTTPException(400, str(e))
     return {"ok": True}
 
 
-@app.delete("/api/telegram")
-async def telegram_clear(request: Request):
-    request.app.state.telegram.clear()
-    return request.app.state.telegram.status()
+@app.post("/api/telegram/test")
+async def telegram_test_all(request: Request):
+    try:
+        return {"results": await request.app.state.telegram.test()}
+    except TelegramError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/telegram/bots/{bot_id}")
+async def telegram_remove_bot(request: Request, bot_id: str):
+    tg: Telegram = request.app.state.telegram
+    try:
+        tg.remove(bot_id)
+    except TelegramError as e:
+        raise HTTPException(400, str(e))
+    return tg.status()
 
 
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")

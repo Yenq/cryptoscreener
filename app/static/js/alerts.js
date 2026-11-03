@@ -106,26 +106,23 @@ export function mount(root, ctx) {
 
       <div class="stack">
         <div class="card" data-f="tgCard">
-          <h2>Telegram <small>уведомления в личку</small></h2>
-          <div class="tg-status" data-f="tgStatus"></div>
-          <ol class="steps" data-f="tgSteps">
-            <li>В Telegram открой <b>@BotFather</b> → <code>/newbot</code> → скопируй токен.</li>
-            <li>Вставь токен ниже и нажми «Сохранить».</li>
-            <li>Открой своего бота, нажми <b>Start</b>, вернись сюда и нажми «Найти мой chat id».</li>
-            <li>Нажми «Тест» — в личку придёт сообщение.</li>
-          </ol>
+          <h2>Telegram <small>готовые боты, можно несколько</small></h2>
+          <div class="list" data-f="tgBots" style="margin-bottom:10px"></div>
           <div class="form">
             <div class="row2">
               <label>Токен бота <input type="password" name="tgToken" placeholder="123456:ABC…" autocomplete="new-password"></label>
-              <label>Chat ID <input type="text" name="tgChat" placeholder="определится сам"></label>
+              <label>Chat ID <input type="text" name="tgChat" placeholder="пусто — найду сам после Start"></label>
             </div>
             <div class="btn-row">
-              <button type="button" class="btn small" data-act="tgSave">Сохранить</button>
-              <button type="button" class="btn ghost small" data-act="tgDetect">Найти мой chat id</button>
-              <button type="button" class="btn ghost small" data-act="tgTest">Тест</button>
-              <button type="button" class="btn ghost small" data-act="tgClear">Отключить</button>
+              <button type="button" class="btn small" data-act="tgAdd">Подключить бота</button>
+              <button type="button" class="btn ghost small" data-act="tgTestAll">Тест всем</button>
             </div>
             <div class="err-msg" data-f="tgMsg"></div>
+            <p class="hint" style="margin:0">Одного @тега бота мало — Telegram разрешает писать только по <b>токену</b>
+              (@BotFather → <code>/mybots</code> → твой бот → <b>API Token</b>); тег бота подтянется сам.
+              Chat ID — твой id (узнать у @userinfobot), id группы или <code>@канал</code>. Если оставить пустым — открой бота,
+              нажми <b>Start</b> и подключай: найду личный чат сам. Подключённых ботов может быть несколько —
+              алерты уходят во все сразу.</p>
           </div>
         </div>
         <div class="card">
@@ -305,14 +302,19 @@ export function mount(root, ctx) {
   // --- Telegram ---------------------------------------------------------------------------
   async function loadTelegram() {
     tg = await api('/telegram');
-    $('tgStatus').innerHTML = tg.configured
-      ? `<span class="up">● Подключено</span> <span class="muted">бот @${esc(tg.bot || '?')} · chat ${esc(tg.chat_id)}</span>`
-      : tg.has_token
-        ? `<span style="color:var(--accent)">● Токен сохранён (${esc(tg.token_hint)}), но chat id не задан</span>`
-        : '<span class="muted">● Не настроено</span>';
-    $('tgSteps').hidden = tg.configured;
-    const chat = root.querySelector('[name=tgChat]');
-    if (tg.chat_id && document.activeElement !== chat) chat.value = tg.chat_id;
+    const bots = tg.destinations;
+    $('tgBots').innerHTML = bots.length ? bots.map(b => `
+      <div class="item ${b.enabled ? '' : 'off'}" data-bot="${esc(b.id)}">
+        <label class="switch" title="Включить / выключить"><input type="checkbox" ${b.enabled ? 'checked' : ''} ${b.from_env ? 'disabled' : ''}><span></span></label>
+        <div class="grow">
+          <div class="title">@${esc(b.bot || '?')}</div>
+          <div class="sub">${b.chat_id ? `chat ${esc(b.chat_id)}${b.chat_name ? ' · ' + esc(b.chat_name) : ''}` : '<span style="color:var(--accent)">chat id не задан</span>'}
+            · токен ${esc(b.token_hint)}${b.from_env ? ' · из переменных окружения' : ''}</div>
+        </div>
+        ${b.chat_id ? '' : '<button type="button" class="btn ghost small" data-act="tgDetect">Найти chat id</button>'}
+        <button type="button" class="btn ghost small" data-act="tgTest">Тест</button>
+        ${b.from_env ? '' : '<button type="button" class="x-btn" data-act="tgDel" title="Отключить бота">✕</button>'}
+      </div>`).join('') : '<div class="hint">Ботов пока нет — подключи готового ниже.</div>';
     root.querySelectorAll('[name=notify_telegram]').forEach(c => {
       c.disabled = !tg.configured;
       if (!tg.configured) c.checked = false;
@@ -335,24 +337,37 @@ export function mount(root, ctx) {
       box.textContent = e.message;
     }
   }
-  const put = body => ({ method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const jsonPost = body => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
   $('tgCard').addEventListener('click', e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
+    const id = e.target.closest('[data-bot]')?.dataset.bot;
     const token = root.querySelector('[name=tgToken]');
     const chat = root.querySelector('[name=tgChat]');
-    if (act === 'tgSave') {
+    if (act === 'tgAdd') {
       tgAction(async () => {
-        await api('/telegram', put({ token: token.value, chat_id: chat.value }));
+        await api('/telegram/bots', jsonPost({ token: token.value, chat_id: chat.value }));
         token.value = '';
-        if (!chat.value.trim() && !tg.chat_id) await api('/telegram/detect', { method: 'POST' }).catch(() => {});
-      }, 'Сохранено');
-    } else if (act === 'tgDetect') {
-      tgAction(() => api('/telegram/detect', { method: 'POST' }), 'Chat id найден');
-    } else if (act === 'tgTest') {
-      tgAction(() => api('/telegram/test', { method: 'POST' }), 'Тестовое сообщение отправлено');
-    } else if (act === 'tgClear') {
-      tgAction(async () => { await api('/telegram', { method: 'DELETE' }); chat.value = ''; }, 'Telegram отключён');
+        chat.value = '';
+      }, 'Бот подключён — проверь кнопкой «Тест»');
+    } else if (act === 'tgTestAll') {
+      tgAction(async () => {
+        const r = (await api('/telegram/test', { method: 'POST' })).results;
+        const bad = r.filter(x => !x.ok);
+        if (bad.length) throw new Error(bad.map(x => `${x.id}: ${x.error}`).join('; '));
+      }, 'Тестовое сообщение отправлено всем');
+    } else if (act === 'tgTest' && id) {
+      tgAction(() => api(`/telegram/bots/${id}/test`, { method: 'POST' }), 'Тестовое сообщение отправлено');
+    } else if (act === 'tgDetect' && id) {
+      tgAction(() => api(`/telegram/bots/${id}/detect`, { method: 'POST' }), 'Chat id найден');
+    } else if (act === 'tgDel' && id) {
+      tgAction(() => api(`/telegram/bots/${id}`, { method: 'DELETE' }), 'Бот отключён');
+    }
+  });
+  $('tgCard').addEventListener('change', e => {
+    const id = e.target.closest('[data-bot]')?.dataset.bot;
+    if (id && e.target.type === 'checkbox') {
+      tgAction(() => api(`/telegram/bots/${id}?enabled=${e.target.checked}`, { method: 'PATCH' }), e.target.checked ? 'Бот включён' : 'Бот выключен');
     }
   });
 
