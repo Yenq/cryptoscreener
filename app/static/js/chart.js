@@ -94,6 +94,24 @@ export class CandleChart {
     return d[lo].time <= timeSec ? d[lo].close : d[0].open;
   }
 
+  /** Подсветка сетапа: линия уровня и пронумерованные касания (только когда таймфрейм графика совпадает с таймфреймом сетапа). */
+  setSetup(s) {
+    if (this.setupLine) {
+      this.candles.removePriceLine(this.setupLine);
+      this.setupLine = null;
+    }
+    if (!s) { this.candles.setMarkers([]); return; }
+    const off = tzShift();
+    const long = s.direction === 'long';
+    this.setupLine = this.candles.createPriceLine({
+      price: s.level, color: '#5b9dff', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: 'уровень',
+    });
+    this.candles.setMarkers(s.touches.map((t, i) => ({
+      time: t.time + off, position: long ? 'aboveBar' : 'belowBar', color: '#5b9dff',
+      shape: long ? 'arrowDown' : 'arrowUp', text: String(i + 1),
+    })));
+  }
+
   /** id алерта, чья линия находится под курсором (допуск по вертикали), или null. */
   alertAt(el, e, tolerance = 9) {
     if (!this.lines?.size) return null;

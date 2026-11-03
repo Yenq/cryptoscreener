@@ -10,11 +10,12 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .alerts import Alert, AlertEngine, AlertIn
+from .alerts import Alert, AlertEngine, AlertIn, SetupParams
 from .collector import Collector
 from .exchanges import INTERVALS, RateLimited, build_exchanges
+from .scanner import SetupScanner
 from .store import Store
 from .telegram import Telegram, TelegramError
 from .updates import UpdateChecker
@@ -39,9 +40,12 @@ async def lifespan(app: FastAPI):
     app.state.collector = collector = Collector(store, alerts)
     app.state.kline_cache = {}
     app.state.updates = UpdateChecker(client)
+    app.state.scanner = scanner = SetupScanner(store, alerts)
     collector.start()
+    scanner.start()
     telegram.start()
     yield
+    await scanner.stop()
     await collector.stop()
     await telegram.close()
     await client.aclose()
@@ -235,6 +239,24 @@ async def alert_stream(request: Request):
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+class SetupScanIn(BaseModel):
+    exchanges: list[str] = []
+    market: Literal["futures", "spot"] = "futures"
+    symbols: list[str] = ["*"]
+    min_volume: float = Field(0, ge=0)
+    setup: SetupParams = SetupParams()
+
+
+@app.post("/api/setups/scan")
+async def scan_setups(request: Request, data: SetupScanIn):
+    """Предпросмотр: что найдётся по этим параметрам прямо сейчас (самые ликвидные монеты)."""
+    known = request.app.state.store.exchanges
+    exchanges = [e for e in data.exchanges if e in known]
+    symbols = [s.strip().upper() for s in data.symbols if s.strip()] or ["*"]
+    found = await request.app.state.scanner.preview(exchanges, data.market, symbols, data.min_volume, data.setup)
+    return {"results": found, "checked": min(data.setup.max_symbols, 40)}
 
 
 # --- Telegram ---------------------------------------------------------------

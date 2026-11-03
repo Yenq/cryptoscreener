@@ -5,7 +5,7 @@ import { api, esc, exLabel, fmtPct, fmtPrice, fmtVol, qs, sign, MARKETS } from '
 const TFS = ['1m', '5m', '15m', '1h', '4h', '1d'];
 
 /** Большой график монеты. Двойной клик по графику ставит разовый алерт на цену. */
-export function openCoin(row, ctx, { tf = '5m' } = {}) {
+export function openCoin(row, ctx, { tf = '5m', setup = null } = {}) {
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `
@@ -48,9 +48,10 @@ export function openCoin(row, ctx, { tf = '5m' } = {}) {
       const data = await api('/klines?' + qs({ exchange: row.exchange, market: row.market, symbol: row.symbol, interval: tf, limit: 300 }));
       if (dead) return;
       chart.setData(data);
+      chart.setSetup(setup && tf === setup.tf ? setup : null); // уровень и касания — только на таймфрейме сетапа
       drawLines();
       oi?.render();
-    } catch { /* повторим на следующем тике */ }
+    } catch (e) { console.error('klines', e); /* повторим на следующем тике */ }
   }
 
   async function loadTicker() {

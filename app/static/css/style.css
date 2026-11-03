@@ -273,3 +273,6 @@ table.coins.compact th:first-child, table.coins.compact td:first-child { text-al
 @container (min-width: 400px) { .coins .m { display: table-cell; } }
 @container (min-width: 560px) { .coins .x { display: table-cell; } }
 .ver { cursor: pointer; }
+
+.adv { border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; background: var(--panel-2); }
+.adv summary { cursor: pointer; color: var(--muted); font-size: 12px; }

@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .paths import DATA_DIR
+from .setups import Params as SetupDetectParams
 
 log = logging.getLogger("alerts")
 
@@ -51,11 +52,40 @@ def _norm_symbol(v: str) -> str:
     return v
 
 
+class SetupParams(BaseModel):
+    """Метрики сетапа «пробой уровня» (см. app/setups.py)."""
+
+    direction: Literal["long", "short"] = "long"
+    timeframe: Literal["1m", "5m", "15m", "1h", "4h", "1d"] = "4h"
+    tolerance_pct: float = Field(1.0, gt=0, le=10)  # разброс касаний, %
+    min_gap: int = Field(5, ge=1, le=2000)  # мин. расстояние между соседними касаниями, свечей
+    max_gap: int = Field(500, ge=1, le=5000)  # макс. расстояние между соседними касаниями, свечей
+    min_touches: int = Field(2, ge=2, le=10)
+    pivot: int = Field(2, ge=1, le=10)  # сколько свечей по бокам должно быть ниже экстремума
+    lookback: int = Field(500, ge=50, le=1000)  # глубина поиска, свечей
+    breakout_pct: float = Field(0.1, ge=0, le=5)  # на сколько % за уровень считается пробоем
+    confirm: Literal["close", "price"] = "close"  # по закрытию свечи или сразу по цене
+    max_symbols: int = Field(100, ge=1, le=500)  # сколько самых ликвидных монет сканировать
+
+    @model_validator(mode="after")
+    def _gaps(self):
+        if self.max_gap < self.min_gap:
+            raise ValueError("Макс. расстояние между касаниями не может быть меньше минимального")
+        return self
+
+    def to_detect(self) -> SetupDetectParams:
+        return SetupDetectParams(
+            direction=self.direction, tolerance=self.tolerance_pct / 100, min_gap=self.min_gap, max_gap=self.max_gap,
+            min_touches=self.min_touches, pivot=self.pivot, lookback=self.lookback, breakout=self.breakout_pct / 100,
+            confirm=self.confirm)
+
+
 class AlertIn(BaseModel):
     """kind=complex — повторяющийся алерт: все условия сразу (И) по списку монет.
-    kind=price — разовое пересечение уровня цены на конкретной бирже."""
+    kind=price — разовое пересечение уровня цены на конкретной бирже.
+    kind=setup — авто-поиск сетапа (пробой уровня по касаниям) по списку монет."""
 
-    kind: Literal["complex", "price"] = "complex"
+    kind: Literal["complex", "price", "setup"] = "complex"
     name: str = Field("", max_length=80)
     market: Literal["futures", "spot"] = "futures"
     notify_telegram: bool = True
@@ -67,6 +97,9 @@ class AlertIn(BaseModel):
     min_volume: float = Field(0, ge=0)
     cooldown_min: float = Field(15, ge=0, le=7 * 24 * 60)
     once: bool = False
+
+    # setup
+    setup: SetupParams | None = None
 
     # price
     exchange: str | None = None
@@ -91,6 +124,9 @@ class AlertIn(BaseModel):
         if self.kind == "price":
             if not (self.exchange and self.symbol and self.level):
                 raise ValueError("Для алерта по цене нужны биржа, монета и уровень")
+        elif self.kind == "setup":
+            if self.setup is None:
+                self.setup = SetupParams()
         else:
             if not self.conditions:
                 raise ValueError("Добавь хотя бы одно условие")
@@ -237,7 +273,7 @@ class AlertEngine:
 
     # --- проверка ---------------------------------------------------------
     async def on_update(self, exchange: str, market: str):
-        active = [a for a in self.alerts.values() if a.enabled and a.market == market and (
+        active = [a for a in self.alerts.values() if a.enabled and a.kind != "setup" and a.market == market and (
             a.exchange == exchange if a.kind == "price" else (not a.exchanges or exchange in a.exchanges))]
         if not active:
             return
@@ -291,6 +327,13 @@ class AlertEngine:
         if all(c.metric != "price" for c in a.conditions):
             text += f" · цена {_fmt_price(r['price'])}"
         return text
+
+    def fire_setup(self, a: Alert, r: dict, text: str, now: float):
+        """Сетап найден сканером (он работает вне on_update)."""
+        if a.once:
+            a.enabled = False
+        self._fire(a, r, text, now)
+        self._save()
 
     def _fire(self, a: Alert, r: dict, text: str, now: float):
         event = {

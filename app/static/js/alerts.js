@@ -1,3 +1,4 @@
+import { openCoin } from './modal.js';
 import { api, esc, EXCHANGES, exLabel, fmtPrice, fmtTime, MARKETS } from './util.js';
 
 const METRICS = {
@@ -40,6 +41,16 @@ function describe(a) {
   }
   const coins = a.symbols[0] === '*' ? 'любые монеты' : a.symbols.join(', ');
   const exch = a.exchanges.length ? a.exchanges.map(exLabel).join(', ') : 'любые биржи';
+  if (a.kind === 'setup') {
+    const s = a.setup;
+    return {
+      title: a.name || `Пробой ${s.timeframe} ${s.direction === 'long' ? '↑ лонг' : '↓ шорт'} · от ${s.min_touches} касаний`,
+      sub: `${coins} · ${exch} · ${market} · разброс ${s.tolerance_pct}% · между касаниями ${s.min_gap}–${s.max_gap} св. · ` +
+           `${s.confirm === 'close' ? 'по закрытию свечи' : 'по цене'} · топ-${s.max_symbols} по объёму` +
+           (a.min_volume ? ` · объём ≥ ${a.min_volume / 1e6}M$` : '') + ` · пауза ${a.cooldown_min} мин`,
+      tag: '<span class="tag rep">сетап</span>',
+    };
+  }
   const conds = a.conditions.map(condText).join(' И ');
   return {
     title: a.name || `${coins}: ${conds}`,
@@ -71,6 +82,64 @@ export function mount(root, ctx) {
           <div class="err-msg" data-f="priceErr"></div>
           <button class="btn" type="submit">Создать</button>
           <p class="hint" style="margin:0">Направление (вверх / вниз) определяется по текущей цене. Быстрее всего — <b>двойной клик ЛКМ по графику</b> в нужной точке (в скринере или в большом графике).</p>
+        </form>
+
+        <form class="card form" data-f="setup" autocomplete="off">
+          <h2>Авто-сетап: пробой уровня <small>ищется по касаниям</small></h2>
+          <label>Биржи <span class="hint">(ничего не выбрано — любые)</span></label>
+          <div class="chips" data-f="sChips" style="margin-top:-4px">
+            ${EXCHANGES.map(e => `<button type="button" class="chip" data-ex="${e.name}" style="--c:${e.color}"><i></i>${e.label}</button>`).join('')}
+          </div>
+          <div class="row2">
+            <label>Рынок <select name="market">${marketOptions}</select></label>
+            <label>Монеты <input type="text" name="symbols" value="*" placeholder="BTC, ETH или *"></label>
+          </div>
+          <div class="row2">
+            <label>Направление
+              <select name="direction"><option value="long">Лонг — пробой вверх</option><option value="short">Шорт — пробой вниз</option></select></label>
+            <label>Таймфрейм уровня
+              <select name="timeframe">${['1m', '5m', '15m', '1h', '4h', '1d'].map(t => `<option value="${t}" ${t === '4h' ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          </div>
+          <div class="row2">
+            <label>Разброс касаний, % <input type="number" name="tolerance_pct" value="1" step="any" min="0.01" max="10"></label>
+            <label>Мин. касаний <input type="number" name="min_touches" value="2" min="2" max="10"></label>
+          </div>
+          <div class="row2">
+            <label>Между касаниями: от, свечей <input type="number" name="min_gap" value="5" min="1"></label>
+            <label>Между касаниями: до, свечей <input type="number" name="max_gap" value="500" min="1"></label>
+          </div>
+          <div class="hint" data-f="gapHint" style="margin-top:-4px"></div>
+          <div class="row2">
+            <label>Пробой засчитывать
+              <select name="confirm"><option value="close">по закрытию свечи</option><option value="price">сразу по цене</option></select></label>
+            <label>Пробой, % за уровень <input type="number" name="breakout_pct" value="0.1" step="any" min="0" max="5"></label>
+          </div>
+          <details class="adv">
+            <summary>Дополнительно</summary>
+            <div class="row2" style="margin-top:8px">
+              <label>Глубина поиска, свечей <input type="number" name="lookback" value="500" min="50" max="1000"></label>
+              <label>Сила касания (свечей по бокам) <input type="number" name="pivot" value="2" min="1" max="10"></label>
+            </div>
+            <div class="row2" style="margin-top:8px">
+              <label>Сканировать монет (топ по объёму) <input type="number" name="max_symbols" value="100" min="1" max="500"></label>
+              <label>Мин. объём 24ч, млн $ <input type="number" name="min_volume" value="1" step="any" min="0"></label>
+            </div>
+            <div class="row2" style="margin-top:8px">
+              <label>Пауза на монету, мин <input type="number" name="cooldown_min" value="60" min="0"></label>
+              <label>Название <input type="text" name="name" maxlength="80"></label>
+            </div>
+          </details>
+          <label class="check"><input type="checkbox" name="notify_telegram" checked> Отправить в Telegram</label>
+          <div class="err-msg" data-f="sErr"></div>
+          <div class="btn-row">
+            <button class="btn" type="submit">Создать алерт</button>
+            <button class="btn ghost" type="button" data-act="sScan">Найти сейчас</button>
+          </div>
+          <div class="list" data-f="sResults"></div>
+          <p class="hint" style="margin:0">Касание — локальный экстремум цены (максимум для лонга, минимум для шорта). Уровень засчитывается,
+            если касания лежат в пределах разброса, соседние разделены нужным числом свечей, а ни одна свеча после первого касания не закрылась
+            за уровнем. «Найти сейчас» показывает, что нашлось по этим параметрам прямо сейчас (пробои и уровни, к которым цена подходит), —
+            так удобно подбирать значения. Окно OKX ограничено 300 свечами.</p>
         </form>
 
         <form class="card form" data-f="complex" autocomplete="off">
@@ -252,6 +321,83 @@ export function mount(root, ctx) {
       await refresh();
     } catch (err) {
       $('err').textContent = err.message;
+    }
+  });
+
+  // --- авто-сетап ----------------------------------------------------------------------------
+  const sForm = $('setup');
+  const TF_HOURS = { '1m': 1 / 60, '5m': 5 / 60, '15m': 0.25, '1h': 1, '4h': 4, '1d': 24 };
+  const span = (candles, tf) => {
+    const h = candles * TF_HOURS[tf];
+    return h < 1 ? `${Math.round(h * 60)} мин` : h < 48 ? `${+h.toFixed(1)} ч` : `${+(h / 24).toFixed(1)} дн`;
+  };
+  const syncGapHint = () => {
+    const f = sForm.elements;
+    $('gapHint').textContent = `между касаниями: от ≈ ${span(+f.min_gap.value, f.timeframe.value)} до ≈ ${span(+f.max_gap.value, f.timeframe.value)}`;
+  };
+  ['min_gap', 'max_gap', 'timeframe'].forEach(n => sForm.elements[n].addEventListener('input', syncGapHint));
+  syncGapHint();
+  $('sChips').addEventListener('click', e => e.target.closest('.chip')?.classList.toggle('on'));
+
+  function setupBody() {
+    const f = sForm.elements;
+    return {
+      exchanges: [...$('sChips').querySelectorAll('.chip.on')].map(c => c.dataset.ex),
+      market: f.market.value,
+      symbols: f.symbols.value.split(/[\s,;]+/).filter(Boolean),
+      min_volume: Number(f.min_volume.value || 0) * 1e6,
+      setup: {
+        direction: f.direction.value, timeframe: f.timeframe.value, tolerance_pct: Number(f.tolerance_pct.value),
+        min_gap: Number(f.min_gap.value), max_gap: Number(f.max_gap.value), min_touches: Number(f.min_touches.value),
+        pivot: Number(f.pivot.value), lookback: Number(f.lookback.value), breakout_pct: Number(f.breakout_pct.value),
+        confirm: f.confirm.value, max_symbols: Number(f.max_symbols.value),
+      },
+    };
+  }
+
+  let scanResults = [];
+  sForm.querySelector('[data-act=sScan]').addEventListener('click', async () => {
+    $('sErr').textContent = '';
+    const box = $('sResults');
+    box.innerHTML = '<div class="hint">Проверяю самые ликвидные монеты…</div>';
+    try {
+      const body = setupBody();
+      const r = await api('/setups/scan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      scanResults = r.results.map(x => ({ ...x, setup: body.setup }));
+      box.innerHTML = scanResults.length ? scanResults.map((x, i) => {
+        const brk = x.status === 'breakout';
+        const dist = brk ? `${Math.abs(x.distance_pct).toFixed(2)}% за уровнем` : `до уровня ${Math.abs(x.distance_pct).toFixed(2)}%`;
+        return `<div class="item" data-i="${i}">
+          <div class="grow"><div class="title">${esc(x.row.base)} <span class="tag ${brk ? 'once' : 'rep'}">${brk ? 'пробой' : 'формируется'}</span></div>
+            <div class="sub">${esc(exLabel(x.row.exchange))} · уровень ${fmtPrice(x.level)} · касаний ${x.touches.length} · цена ${fmtPrice(x.price)} (${dist})</div></div>
+          <button type="button" class="btn ghost small" data-open>График</button>
+        </div>`;
+      }).join('') : `<div class="hint">Сейчас ничего не найдено среди ${r.checked} самых ликвидных монет. Ослабь параметры: больше разброс, меньше касаний, другой таймфрейм.</div>`;
+    } catch (err) {
+      box.innerHTML = '';
+      $('sErr').textContent = err.message;
+    }
+  });
+  $('sResults').addEventListener('click', e => {
+    const i = e.target.closest('[data-open]') && e.target.closest('[data-i]')?.dataset.i;
+    if (i === undefined || i === false) return;
+    const x = scanResults[Number(i)];
+    openCoin(x.row, ctx, { tf: x.setup.timeframe, setup: { tf: x.setup.timeframe, level: x.level, direction: x.setup.direction, touches: x.touches } });
+  });
+
+  sForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    $('sErr').textContent = '';
+    const f = sForm.elements;
+    const b = setupBody();
+    try {
+      await post({
+        kind: 'setup', name: f.name.value.trim(), market: b.market, exchanges: b.exchanges, symbols: b.symbols,
+        min_volume: b.min_volume, cooldown_min: Number(f.cooldown_min.value || 0), notify_telegram: f.notify_telegram.checked, setup: b.setup,
+      });
+      await refresh();
+    } catch (err) {
+      $('sErr').textContent = err.message;
     }
   });
 
