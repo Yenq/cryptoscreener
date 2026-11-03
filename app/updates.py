@@ -8,7 +8,8 @@ import httpx
 from .version import GITHUB_REPO, __version__
 
 log = logging.getLogger("updates")
-OK_TTL = 1800  # после успешной проверки спрашиваем GitHub раз в 30 минут
+OK_TTL = 300  # после успешной проверки спрашиваем GitHub раз в 5 минут (лимит без токена — 60 запросов/час)
+FORCE_MIN_GAP = 10  # ручная проверка не чаще раза в 10 секунд
 RETRY_TTL = 120  # после сбоя пробуем снова через 2 минуты
 
 
@@ -42,12 +43,12 @@ class UpdateChecker:
             self.error, self._ttl = f"{type(e).__name__}: {e}"[:160], RETRY_TTL
             log.info("не удалось проверить обновления: %s", self.error)
 
-    async def info(self) -> dict:
+    async def info(self, force: bool = False) -> dict:
         out = {"current": __version__, "latest": None, "url": None, "update_available": False,
                "repo": self.repo or None, "error": None}
         if not self.repo:
             return out
-        if time.time() - self._at > self._ttl:
+        if time.time() - self._at > (FORCE_MIN_GAP if force else self._ttl):
             self._at = time.time()
             await self._fetch()
         out["error"] = self.error

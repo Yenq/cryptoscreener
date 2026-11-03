@@ -179,9 +179,9 @@ async function updateStatus() {
   }
 }
 
-async function showVersion() {
+async function showVersion(manual = false) {
   try {
-    const v = await api('/version');
+    const v = await api('/version' + (manual ? '?refresh=true' : ''));
     const el = document.getElementById('version');
     el.hidden = false;
     el.classList.toggle('new', v.update_available);
@@ -190,17 +190,31 @@ async function showVersion() {
       el.href = v.url;
       el.title = `Установлена v${v.current}. Распакуй новую версию поверх старой — алерты и настройки (папка data) сохранятся.`;
     } else {
-      el.textContent = `v${v.current}`;
+      el.textContent = `v${v.current}${v.error ? ' ⚠' : ''}`;
       el.removeAttribute('href');
-      el.title = v.error ? `Проверка обновлений не удалась: ${v.error}` : v.latest ? 'Установлена последняя версия' : 'Проверка обновлений отключена';
+      el.title = (v.error ? `Проверка обновлений не удалась: ${v.error}. ` : '') + 'Нажми, чтобы проверить обновления сейчас';
     }
-  } catch { /* не критично */ }
+    if (manual) {
+      showToast({
+        title: v.update_available ? `⬆ Доступна v${v.latest}` : v.error ? 'Не удалось проверить обновления' : 'Обновлений нет',
+        text: v.error || `Установлена v${v.current}, последняя на GitHub — v${v.latest ?? '?'}`,
+        url: v.update_available ? v.url : undefined,
+        error: !!v.error,
+        ttl: 8000,
+      });
+    }
+  } catch (e) {
+    if (manual) showToast({ title: 'Нет связи с сервером', text: e.message, error: true });
+  }
 }
+document.getElementById('version').addEventListener('click', e => {
+  if (!e.currentTarget.getAttribute('href')) { e.preventDefault(); showVersion(true); }
+});
 
 updateStatus();
 setInterval(updateStatus, 10000);
 showVersion();
-setInterval(showVersion, 300_000);
+setInterval(showVersion, 120_000);
 refreshAlerts();
 setInterval(refreshAlerts, 15000);
 route();

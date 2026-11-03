@@ -68,8 +68,8 @@ def _exchanges(request: Request, csv: str | None) -> list[str]:
 
 # --- данные ---------------------------------------------------------------
 @app.get("/api/version")
-async def version(request: Request):
-    return await request.app.state.updates.info()
+async def version(request: Request, refresh: bool = False):
+    return await request.app.state.updates.info(force=refresh)
 
 
 @app.get("/api/meta")
